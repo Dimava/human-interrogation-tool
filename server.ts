@@ -209,6 +209,37 @@ serve({
         });
       }
 
+      // GET /api/conversation/:id/answers.md - get answers as markdown
+      if (action === "answers.md" && req.method === "GET") {
+        const data = await loadConversation(conversationId);
+        let md = `# ${conversationId}\n\n`;
+
+        for (const q of data.questions) {
+          const checked = q.options.filter((o: any) => o.checked);
+          if (checked.length === 0) continue;
+
+          const label = q.label ? `${q.id} ${q.label}` : q.id;
+          md += `**${label}**: ${q.text}\n`;
+
+          for (const opt of checked) {
+            const marker = opt.marker ? ` ${opt.marker}` : "";
+            // Skip empty [_] options
+            if (opt.id === "_" && !opt.text && !opt.description) continue;
+
+            md += `- [${opt.id}]${marker} ${opt.text}\n`;
+            if (opt.description) {
+              const desc = opt.description.split('\n').map((l: string) => `  > ${l}`).join('\n');
+              md += `${desc}\n`;
+            }
+          }
+          md += "\n";
+        }
+
+        return new Response(md.trim() || "No answers yet.\n", {
+          headers: { "Content-Type": "text/markdown; charset=utf-8" },
+        });
+      }
+
       // GET /api/conversation/:id/answers - get all checked answers
       if (action === "answers" && req.method === "GET") {
         const data = await loadConversation(conversationId);
