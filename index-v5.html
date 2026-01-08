@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>interrogate</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0c0c0c;
+      --fg: #cccccc;
+      --fg-bright: #ffffff;
+      --dim: #555;
+      --cyan: #00d9ff;
+      --green: #00ff88;
+      --green-bg: rgba(0, 255, 136, 0.07);
+      --yellow: #ffcc00;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--fg);
+      padding: 0.75rem;
+      padding-bottom: 80vh;
+    }
+
+    .header {
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid #333;
+      padding-bottom: 0.5rem;
+    }
+
+    .header-line { display: flex; gap: 0.5ch; }
+    .prompt { color: var(--green); }
+    .path { color: var(--cyan); }
+
+    /* Question */
+    .question { margin-bottom: 1rem; }
+
+    .question + .question {
+      border-top: 1px solid #333;
+      padding-top: 0.75rem;
+    }
+
+    .question-meta {
+      color: var(--dim);
+      font-size: 13px;
+      margin-bottom: 0.25rem;
+    }
+
+    .question-meta span + span::before { content: ' '; }
+    .question-label { color: var(--cyan); }
+    .question-mode { color: var(--yellow); }
+    .question-text { margin-bottom: 0.5rem; }
+
+    /* Options */
+    .options { margin-left: 1ch; }
+
+    .option-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 1ch;
+      cursor: pointer;
+      padding: 2px 4px;
+      margin: 0 -4px;
+      border-radius: 2px;
+      color: var(--dim);
+    }
+
+    .option-row:hover { background: rgba(255,255,255,0.03); }
+
+    .option-row.selected {
+      background: var(--green-bg);
+      color: var(--fg);
+    }
+
+    .option-indicator {
+      width: 2ch;
+      flex-shrink: 0;
+      text-align: center;
+      color: var(--green);
+    }
+
+    .option-letter {
+      color: var(--cyan);
+      flex-shrink: 0;
+    }
+
+    .option-row.selected .option-letter { color: var(--green); }
+
+    .option-content {
+      flex: 1;
+      outline: none;
+      min-width: 0;
+      white-space: pre-wrap;
+      color: var(--dim);
+    }
+
+    .option-content::first-line {
+      color: var(--fg-bright);
+    }
+
+    .option-row:not(.selected) .option-content::first-line {
+      color: var(--fg);
+    }
+
+    .option-content:focus {
+      background: rgba(255,255,255,0.03);
+    }
+
+    .option-content:empty::before {
+      content: '...';
+      color: #333;
+    }
+
+    /* Status bar */
+    .status {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #1a1a1a;
+      border-top: 1px solid #333;
+      padding: 0.4rem 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .status-hints { color: var(--dim); }
+    .status-hints kbd { color: var(--cyan); }
+
+    .send-btn {
+      background: transparent;
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-family: inherit;
+      font-size: inherit;
+      padding: 0.2rem 1rem;
+      cursor: pointer;
+    }
+
+    .send-btn:hover {
+      background: var(--green);
+      color: var(--bg);
+    }
+
+    .send-btn:disabled {
+      border-color: #444;
+      color: #444;
+      cursor: default;
+    }
+
+    .send-btn:disabled:hover { background: transparent; }
+
+    .empty { color: var(--dim); }
+
+    .json-toggle {
+      color: #444;
+      cursor: pointer;
+      margin-top: 1.5rem;
+      font-size: 12px;
+    }
+
+    .json-toggle:hover { color: var(--dim); }
+
+    .json-content {
+      margin-top: 0.5rem;
+      color: #444;
+      white-space: pre-wrap;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <div class="header-line">
+        <span class="prompt">$</span>
+        <span>interrogate</span>
+        <span class="path">{{ conversationId }}</span>
+      </div>
+    </div>
+
+    <div v-if="data.questions.length === 0" class="empty">-- no questions --</div>
+
+    <div v-for="q in data.questions" :key="q.id" class="question">
+      <div class="question-meta">
+        <span>[{{ q.id }}]</span>
+        <span v-if="q.label" class="question-label">{{ q.label }}</span>
+        <span v-for="tag in (q.tags || [])" :key="tag">#{{ tag }}</span>
+        <span v-if="q.selectMode" class="question-mode">({{ q.selectMode }})</span>
+      </div>
+      <div class="question-text">{{ q.text }}</div>
+
+      <div class="options">
+        <div
+          v-for="opt in q.options"
+          :key="opt.id"
+          class="option-row"
+          :class="{ selected: opt.checked }"
+          @click="toggle(opt, 'checked')"
+        >
+          <span class="option-indicator">{{ opt.checked ? (opt.marker || '✓') : '' }}</span>
+          <span class="option-letter">[{{ opt.id }}]</span>
+          <span
+            class="option-content"
+            contenteditable="true"
+            @blur="parseContent(opt, $event)"
+            @input="handleInput(opt, 'marker', 'checked', $event)"
+            @click.stop="opt.checked = true"
+          >{{ formatContent(opt.text, opt.description) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="json-toggle" @click="showJson = !showJson">
+      {{ showJson ? '[-]' : '[+]' }} json
+      <pre v-if="showJson" class="json-content">{{ JSON.stringify(data, null, 2) }}</pre>
+    </div>
+
+    <div class="status">
+      <span class="status-hints">
+        <kbd>click</kbd> toggle · <kbd>type</kbd> edit · <kbd>\yes</kbd> <kbd>\no</kbd> emoji
+      </span>
+      <button class="send-btn" :disabled="checkedCount === 0" @click="send">
+        send{{ checkedCount > 0 ? ' (' + checkedCount + ')' : '' }}
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted, computed } = Vue;
+
+    const pathMatch = window.location.pathname.match(/^\/conversation\/(.+)$/);
+    const urlParams = new URLSearchParams(window.location.search);
+    const conversationId = pathMatch?.[1] || urlParams.get('c') || 'default';
+    const API_BASE = `/api/v5/conversation/${conversationId}`;
+
+    const MARKERS = {
+      '\\idea': '💡', '\\done': '✅', '\\later': '⏰', '\\no': '❌',
+      '\\yes': '✅', '\\maybe': '🤔', '\\important': '⚠️',
+      '\\question': '❓', '\\love': '❤️', '\\star': '⭐',
+    };
+
+    createApp({
+      setup() {
+        const data = ref({ questions: [] });
+        const showJson = ref(false);
+
+        const checkedCount = computed(() => {
+          let count = 0;
+          for (const q of data.value.questions) {
+            for (const opt of q.options) if (opt.checked) count++;
+          }
+          return count;
+        });
+
+        async function load() {
+          const res = await fetch(`${API_BASE}/data`);
+          data.value = await res.json();
+        }
+
+        function toggle(obj, key) {
+          obj[key] = !obj[key];
+        }
+
+        function formatContent(text, desc) {
+          if (desc) {
+            return `${text || ''}\n> ${desc}`;
+          }
+          return text || '';
+        }
+
+        function parseContent(opt, event) {
+          const raw = event.target.textContent;
+          const lines = raw.split('\n');
+          opt.text = lines[0] || '';
+
+          // Check for > prefix in subsequent lines
+          if (lines.length > 1) {
+            const descLine = lines.slice(1).join('\n');
+            const match = descLine.match(/^>\s*(.*)/s);
+            opt.description = match ? match[1].trim() : descLine.trim();
+          } else {
+            opt.description = '';
+          }
+        }
+
+        function handleInput(obj, markerKey, checkedKey, event) {
+          const text = event.target.textContent;
+          for (const [shortcut, emoji] of Object.entries(MARKERS)) {
+            if (text.includes(shortcut)) {
+              obj[markerKey] = emoji;
+              obj[checkedKey] = true;
+              event.target.textContent = text.replace(shortcut, '').trim();
+              // Move cursor to end
+              const range = document.createRange();
+              range.selectNodeContents(event.target);
+              range.collapse(false);
+              const sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(range);
+              return;
+            }
+          }
+        }
+
+        async function send() {
+          await fetch(`${API_BASE}/data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data.value)
+          });
+          console.log('Sent:', JSON.stringify(data.value, null, 2));
+        }
+
+        onMounted(load);
+
+        return {
+          data, conversationId, checkedCount, showJson,
+          toggle, formatContent, parseContent, handleInput, send
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

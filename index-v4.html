@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>interrogate</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0c0c0c;
+      --fg: #cccccc;
+      --dim: #555;
+      --cyan: #00d9ff;
+      --green: #00ff88;
+      --yellow: #ffcc00;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--fg);
+      padding: 0.75rem;
+      padding-bottom: 80vh;
+    }
+
+    .header {
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid #333;
+      padding-bottom: 0.5rem;
+    }
+
+    .header-line { display: flex; gap: 0.5ch; }
+    .prompt { color: var(--green); }
+    .path { color: var(--cyan); }
+
+    /* Question */
+    .question { margin-bottom: 1rem; }
+
+    .question + .question {
+      border-top: 1px solid #333;
+      padding-top: 0.75rem;
+    }
+
+    .question-meta {
+      color: var(--dim);
+      font-size: 13px;
+      margin-bottom: 0.25rem;
+    }
+
+    .question-meta span + span::before { content: ' '; }
+    .question-label { color: var(--cyan); }
+    .question-mode { color: var(--yellow); }
+    .question-text { margin-bottom: 0.5rem; }
+
+    /* Options */
+    .options { margin-left: 1ch; }
+
+    .option-row {
+      cursor: pointer;
+      margin-bottom: 1px;
+    }
+
+    .option-row:hover { background: rgba(255,255,255,0.03); }
+
+    .option-line {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5ch;
+      color: var(--dim);
+    }
+
+    .option-row.selected .option-line { color: var(--fg); }
+
+    .option-indicator {
+      width: 2ch;
+      flex-shrink: 0;
+      text-align: center;
+    }
+
+    .option-row.selected .option-indicator { color: var(--green); }
+
+    .option-letter {
+      color: var(--cyan);
+      flex-shrink: 0;
+    }
+
+    .option-row.selected .option-letter { color: var(--green); }
+
+    .option-text {
+      flex: 1;
+      outline: none;
+      min-width: 0;
+    }
+
+    .option-text:focus { background: rgba(255,255,255,0.05); }
+
+    .option-desc {
+      margin-left: 5ch;
+      font-size: 13px;
+      color: var(--dim);
+      outline: none;
+    }
+
+    .option-desc:empty::before {
+      content: 'description...';
+      color: #333;
+    }
+
+    .option-desc:focus { background: rgba(255,255,255,0.05); }
+
+    /* Freeform */
+    .freeform-row {
+      cursor: pointer;
+      margin-left: 1ch;
+      margin-top: 0.5rem;
+    }
+
+    .freeform-row:hover { background: rgba(255,255,255,0.03); }
+
+    .freeform-line {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5ch;
+      color: var(--dim);
+    }
+
+    .freeform-row.selected .freeform-line { color: var(--fg); }
+
+    .freeform-indicator {
+      width: 2ch;
+      flex-shrink: 0;
+      text-align: center;
+    }
+
+    .freeform-row.selected .freeform-indicator { color: var(--green); }
+
+    .freeform-letter {
+      color: var(--cyan);
+      flex-shrink: 0;
+    }
+
+    .freeform-row.selected .freeform-letter { color: var(--green); }
+
+    .freeform-text {
+      flex: 1;
+      outline: none;
+      min-width: 0;
+    }
+
+    .freeform-text:empty::before {
+      content: '...';
+      color: #333;
+    }
+
+    .freeform-text:focus { background: rgba(255,255,255,0.05); }
+
+    .freeform-desc {
+      margin-left: 5ch;
+      font-size: 13px;
+      color: var(--dim);
+      outline: none;
+    }
+
+    .freeform-desc:empty::before {
+      content: 'description...';
+      color: #333;
+    }
+
+    .freeform-desc:focus { background: rgba(255,255,255,0.05); }
+
+    /* Status bar */
+    .status {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #1a1a1a;
+      border-top: 1px solid #333;
+      padding: 0.4rem 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .status-hints { color: var(--dim); }
+    .status-hints kbd { color: var(--cyan); }
+
+    .send-btn {
+      background: transparent;
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-family: inherit;
+      font-size: inherit;
+      padding: 0.2rem 1rem;
+      cursor: pointer;
+    }
+
+    .send-btn:hover {
+      background: var(--green);
+      color: var(--bg);
+    }
+
+    .send-btn:disabled {
+      border-color: #444;
+      color: #444;
+      cursor: default;
+    }
+
+    .send-btn:disabled:hover { background: transparent; }
+
+    .empty { color: var(--dim); }
+
+    .json-toggle {
+      color: #444;
+      cursor: pointer;
+      margin-top: 1.5rem;
+      font-size: 12px;
+    }
+
+    .json-toggle:hover { color: var(--dim); }
+
+    .json-content {
+      margin-top: 0.5rem;
+      color: #444;
+      white-space: pre-wrap;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <div class="header-line">
+        <span class="prompt">$</span>
+        <span>interrogate</span>
+        <span class="path">{{ conversationId }}</span>
+      </div>
+    </div>
+
+    <div v-if="data.questions.length === 0" class="empty">-- no questions --</div>
+
+    <div v-for="q in data.questions" :key="q.id" class="question">
+      <div class="question-meta">
+        <span>[{{ q.id }}]</span>
+        <span v-if="q.label" class="question-label">{{ q.label }}</span>
+        <span v-for="tag in (q.tags || [])" :key="tag">#{{ tag }}</span>
+        <span v-if="q.selectMode" class="question-mode">({{ q.selectMode }})</span>
+      </div>
+      <div class="question-text">{{ q.text }}</div>
+
+      <div class="options">
+        <template v-for="(opt, i) in q.options" :key="opt.id">
+          <div
+            class="option-row"
+            :class="{ selected: opt.checked }"
+            @click="toggle(opt, 'checked')"
+          >
+            <div class="option-line">
+              <span class="option-indicator">{{ opt.checked ? (opt.marker || '→') : '' }}</span>
+              <span class="option-letter">{{ opt.id }}.</span>
+              <span
+                class="option-text"
+                contenteditable="true"
+                @blur="opt.text = $event.target.textContent"
+                @input="handleInput(opt, 'marker', 'checked', $event)"
+                @click.stop
+              >{{ opt.text }}</span>
+            </div>
+            <div
+              class="option-desc"
+              contenteditable="true"
+              @blur="opt.description = $event.target.textContent"
+              @click.stop
+            >{{ opt.description }}</div>
+          </div>
+        </template>
+      </div>
+
+      <div
+        class="freeform-row"
+        :class="{ selected: q.freeform_checked }"
+        @click="toggle(q, 'freeform_checked')"
+      >
+        <div class="freeform-line">
+          <span class="freeform-indicator">{{ q.freeform_checked ? (q.freeform_marker || '→') : '' }}</span>
+          <span class="freeform-letter">_.</span>
+          <span
+            class="freeform-text"
+            contenteditable="true"
+            @focus="q.freeform_checked = true"
+            @blur="q.freeform = $event.target.textContent"
+            @input="handleInput(q, 'freeform_marker', 'freeform_checked', $event)"
+            @click.stop
+          >{{ q.freeform }}</span>
+        </div>
+        <div
+          class="freeform-desc"
+          contenteditable="true"
+          @blur="q.freeform_description = $event.target.textContent"
+          @click.stop
+        >{{ q.freeform_description }}</div>
+      </div>
+    </div>
+
+    <div class="json-toggle" @click="showJson = !showJson">
+      {{ showJson ? '[-]' : '[+]' }} json
+      <pre v-if="showJson" class="json-content">{{ JSON.stringify(data, null, 2) }}</pre>
+    </div>
+
+    <div class="status">
+      <span class="status-hints">
+        <kbd>click</kbd> toggle · <kbd>type</kbd> edit · <kbd>\yes</kbd> <kbd>\no</kbd> emoji
+      </span>
+      <button class="send-btn" :disabled="checkedCount === 0" @click="send">
+        send{{ checkedCount > 0 ? ' (' + checkedCount + ')' : '' }}
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted, computed } = Vue;
+
+    const pathMatch = window.location.pathname.match(/^\/v4\/conversation\/(.+)$/);
+    const urlParams = new URLSearchParams(window.location.search);
+    const conversationId = pathMatch?.[1] || urlParams.get('c') || 'default';
+    const API_BASE = `/api/conversation/${conversationId}`;
+
+    const MARKERS = {
+      '\\idea': '💡', '\\done': '✅', '\\later': '⏰', '\\no': '❌',
+      '\\yes': '✅', '\\maybe': '🤔', '\\important': '⚠️',
+      '\\question': '❓', '\\love': '❤️', '\\star': '⭐',
+    };
+
+    createApp({
+      setup() {
+        const data = ref({ questions: [] });
+        const showJson = ref(false);
+
+        const checkedCount = computed(() => {
+          let count = 0;
+          for (const q of data.value.questions) {
+            for (const opt of q.options) if (opt.checked) count++;
+            if (q.freeform_checked) count++;
+          }
+          return count;
+        });
+
+        async function load() {
+          const res = await fetch(`${API_BASE}/data`);
+          data.value = await res.json();
+        }
+
+        function toggle(obj, key) {
+          obj[key] = !obj[key];
+        }
+
+        function handleInput(obj, markerKey, checkedKey, event) {
+          const text = event.target.textContent;
+          for (const [shortcut, emoji] of Object.entries(MARKERS)) {
+            if (text.includes(shortcut)) {
+              obj[markerKey] = emoji;
+              obj[checkedKey] = true;
+              event.target.textContent = text.replace(shortcut, '').trim();
+              // Move cursor to end
+              const range = document.createRange();
+              range.selectNodeContents(event.target);
+              range.collapse(false);
+              const sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(range);
+              return;
+            }
+          }
+        }
+
+        async function send() {
+          await fetch(`${API_BASE}/data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data.value)
+          });
+          console.log('Sent:', JSON.stringify(data.value, null, 2));
+        }
+
+        onMounted(load);
+
+        return { data, conversationId, checkedCount, showJson, toggle, handleInput, send };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

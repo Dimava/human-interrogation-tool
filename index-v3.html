@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>interrogate</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0c0c0c;
+      --fg: #cccccc;
+      --dim: #666666;
+      --cyan: #00d9ff;
+      --green: #00ff88;
+      --yellow: #ffcc00;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      line-height: 1.4;
+      background: var(--bg);
+      color: var(--fg);
+      padding: 1rem;
+      padding-bottom: 4rem;
+    }
+
+    /* Scanline effect */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.15) 2px,
+        rgba(0,0,0,0.15) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    .prompt { color: var(--green); }
+    .path { color: var(--cyan); }
+
+    .header {
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #333;
+      padding-bottom: 0.5rem;
+    }
+
+    .header-line { display: flex; gap: 0.5rem; }
+
+    .version-tag {
+      color: #444;
+      font-size: 12px;
+      margin-top: 0.25rem;
+    }
+
+    .question { margin-bottom: 1.5rem; }
+
+    .question-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .question-id { color: var(--dim); }
+    .question-label { color: var(--cyan); }
+    .question-tag { color: var(--dim); }
+    .question-mode { color: var(--yellow); }
+    .question-text { color: var(--fg); margin-bottom: 0.5rem; }
+
+    .options { margin-left: 2ch; }
+
+    .option {
+      display: flex;
+      align-items: flex-start;
+      gap: 1ch;
+      cursor: pointer;
+      padding: 2px 0;
+    }
+
+    .option:hover { background: rgba(255,255,255,0.05); }
+    .option.selected { color: var(--green); }
+
+    .option-letter {
+      color: var(--cyan);
+      flex-shrink: 0;
+    }
+
+    .option.selected .option-letter { color: var(--green); }
+
+    .option-check {
+      color: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .option.selected .option-check { color: var(--green); }
+
+    .option-text { flex: 1; }
+
+    .option-desc {
+      color: var(--dim);
+      margin-left: 9ch;
+      font-size: 13px;
+    }
+
+    .option-marker { flex-shrink: 0; }
+
+    .freeform {
+      display: flex;
+      align-items: flex-start;
+      gap: 1ch;
+      margin-left: 2ch;
+      margin-top: 0.25rem;
+      padding: 2px 0;
+    }
+
+    .freeform.selected { color: var(--green); }
+
+    .freeform-check {
+      color: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .freeform.selected .freeform-check { color: var(--green); }
+
+    .freeform-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--dim);
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      outline: none;
+      resize: none;
+      min-height: 1.4em;
+      field-sizing: content;
+    }
+
+    .freeform-input:focus { color: var(--fg); }
+    .freeform-input::placeholder { color: #444; }
+    .freeform-input:focus { caret-color: var(--green); }
+
+    .divider {
+      color: #333;
+      margin: 1rem 0;
+    }
+
+    .status {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #1a1a1a;
+      border-top: 1px solid #333;
+      padding: 0.5rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .status-left { display: flex; gap: 2ch; }
+    .status-key { color: var(--cyan); }
+    .status-action { color: var(--dim); }
+
+    .send-btn {
+      background: transparent;
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-family: inherit;
+      font-size: inherit;
+      padding: 0.25rem 1rem;
+      cursor: pointer;
+    }
+
+    .send-btn:hover {
+      background: var(--green);
+      color: var(--bg);
+    }
+
+    .send-btn:disabled {
+      border-color: #444;
+      color: #444;
+      cursor: default;
+    }
+
+    .send-btn:disabled:hover {
+      background: transparent;
+      color: #444;
+    }
+
+    .empty { color: var(--dim); }
+
+    .json-toggle {
+      color: var(--dim);
+      cursor: pointer;
+      margin-top: 2rem;
+    }
+
+    .json-toggle:hover { color: var(--fg); }
+
+    .json-content {
+      margin-top: 0.5rem;
+      color: #555;
+      white-space: pre-wrap;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <div class="header-line">
+        <span class="prompt">$</span>
+        <span>interrogate</span>
+        <span class="path">{{ conversationId }}</span>
+      </div>
+      <div class="version-tag">Version 3: Terminal with [x] checkboxes + scanlines</div>
+    </div>
+
+    <div v-if="data.questions.length === 0" class="empty">-- no questions --</div>
+
+    <template v-for="(q, qi) in data.questions" :key="q.id">
+      <div class="question">
+        <div class="question-header">
+          <span class="question-id">[{{ q.id }}]</span>
+          <span v-if="q.label" class="question-label">{{ q.label }}</span>
+          <span v-for="tag in (q.tags || [])" :key="tag" class="question-tag">#{{ tag }}</span>
+          <span v-if="q.selectMode" class="question-mode">({{ q.selectMode }})</span>
+        </div>
+        <div class="question-text">{{ q.text }}</div>
+
+        <div class="options">
+          <template v-for="(opt, i) in q.options" :key="opt.id">
+            <div
+              class="option"
+              :class="{ selected: opt.checked }"
+              @click="toggle(opt, 'checked')"
+            >
+              <span class="option-letter">[{{ opt.id }}]</span>
+              <span class="option-check">{{ opt.checked ? '[x]' : '[ ]' }}</span>
+              <span class="option-text">{{ opt.text }}</span>
+              <span v-if="opt.marker" class="option-marker">{{ opt.marker }}</span>
+            </div>
+            <div v-if="opt.description" class="option-desc">└─ {{ opt.description }}</div>
+          </template>
+        </div>
+
+        <div
+          class="freeform"
+          :class="{ selected: q.freeform_checked }"
+          @click="focusFreeform($event)"
+        >
+          <span class="option-letter">[_]</span>
+          <span class="freeform-check">{{ q.freeform_checked ? '[x]' : '[ ]' }}</span>
+          <textarea
+            class="freeform-input"
+            v-model="q.freeform"
+            placeholder="..."
+            rows="1"
+            @focus="q.freeform_checked = true"
+          ></textarea>
+          <span v-if="q.freeform_marker" class="option-marker">{{ q.freeform_marker }}</span>
+        </div>
+      </div>
+
+      <div v-if="qi < data.questions.length - 1" class="divider">────────────────────────────────────────</div>
+    </template>
+
+    <div class="json-toggle" @click="showJson = !showJson">
+      {{ showJson ? '[-] json' : '[+] json' }}
+      <pre v-if="showJson" class="json-content">{{ JSON.stringify(data, null, 2) }}</pre>
+    </div>
+
+    <div class="status">
+      <div class="status-left">
+        <span><span class="status-key">click</span> <span class="status-action">toggle</span></span>
+        <span><span class="status-key">type</span> <span class="status-action">freeform</span></span>
+      </div>
+      <button class="send-btn" :disabled="checkedCount === 0" @click="send">
+        send {{ checkedCount > 0 ? '(' + checkedCount + ')' : '' }}
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted, computed } = Vue;
+
+    const pathMatch = window.location.pathname.match(/^\/v3\/conversation\/(.+)$/);
+    const urlParams = new URLSearchParams(window.location.search);
+    const conversationId = pathMatch?.[1] || urlParams.get('c') || 'default';
+    const API_BASE = `/api/conversation/${conversationId}`;
+
+    createApp({
+      setup() {
+        const data = ref({ questions: [] });
+        const showJson = ref(false);
+
+        const checkedCount = computed(() => {
+          let count = 0;
+          for (const q of data.value.questions) {
+            for (const opt of q.options) if (opt.checked) count++;
+            if (q.freeform_checked) count++;
+          }
+          return count;
+        });
+
+        async function load() {
+          const res = await fetch(`${API_BASE}/data`);
+          data.value = await res.json();
+        }
+
+        function toggle(obj, key) {
+          obj[key] = !obj[key];
+        }
+
+        function focusFreeform(event) {
+          const textarea = event.currentTarget.querySelector('textarea');
+          if (textarea) textarea.focus();
+        }
+
+        async function send() {
+          await fetch(`${API_BASE}/data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data.value)
+          });
+          console.log('Sent:', JSON.stringify(data.value, null, 2));
+        }
+
+        onMounted(load);
+
+        return { data, conversationId, checkedCount, showJson, toggle, focusFreeform, send };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

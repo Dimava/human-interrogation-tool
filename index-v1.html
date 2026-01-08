@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Human Interrogation Tool</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@unocss/runtime"></script>
+  <style>
+    [un-cloak] { display: none; }
+    body { font-family: system-ui, sans-serif; }
+    textarea { field-sizing: content; resize: none; min-height: 1lh; }
+
+    .marker-checkbox {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.1rem;
+      height: 1.1rem;
+      border: 2px solid #6b7280;
+      border-radius: 3px;
+      font-size: 0.8rem;
+      line-height: 1;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .marker-checkbox.checked {
+      border-color: #3b82f6;
+      background: #3b82f6;
+    }
+    .marker-checkbox.checked:not(.has-marker)::after {
+      content: '✓';
+      color: white;
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-4 pb-20" un-cloak>
+  <div id="app">
+    <div class="max-w-3xl mx-auto">
+      <h1 class="text-2xl font-bold mb-4">Human Interrogation Tool</h1>
+      <p class="text-gray-500 text-sm mb-4">Conversation: <code class="bg-gray-800 px-2 py-0.5 rounded">{{ conversationId }}</code></p>
+      <p class="text-gray-600 text-xs mb-4">Version 1: Original UnoCSS style</p>
+
+      <div v-for="(q, qi) in data.questions" :key="q.id" class="mb-6 bg-gray-800 rounded-lg p-4">
+        <div class="flex items-start gap-2 mb-3 flex-wrap">
+          <span class="text-gray-500 font-mono text-sm">{{ q.id }}</span>
+          <span v-if="q.label" class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded">{{ q.label }}</span>
+          <span v-if="q.selectMode" class="text-gray-500 text-xs">({{ q.selectMode }})</span>
+          <span v-if="q.parent_id" class="text-blue-400 text-sm">← {{ q.parent_id }}</span>
+        </div>
+        <div v-if="q.tags && q.tags.length" class="flex gap-1 mb-2">
+          <span v-for="tag in q.tags" :key="tag" class="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">#{{ tag }}</span>
+        </div>
+        <p class="text-lg mb-3">{{ q.text }}</p>
+
+        <div
+          v-for="(opt, oi) in q.options"
+          :key="opt.id"
+          class="flex items-start gap-2 mb-2 cursor-pointer"
+          @click="toggle(opt, $event)"
+        >
+          <span class="text-blue-400 font-mono w-6 select-none">[{{ opt.id }}]</span>
+          <span
+            class="marker-checkbox mt-0.5"
+            :class="{ checked: opt.checked, 'has-marker': opt.marker }"
+          >{{ opt.checked && opt.marker ? opt.marker : '' }}</span>
+          <textarea
+            v-model="opt.text"
+            class="flex-1 bg-gray-700 rounded px-2 py-1 text-gray-100"
+            @focus="opt.checked = true"
+            @keyup="applyMarkers(opt, 'marker', 'checked', $event)"
+          ></textarea>
+        </div>
+
+        <div
+          class="flex items-start gap-2 mt-3 cursor-pointer"
+          @click="toggle(q, 'freeform_checked', $event)"
+        >
+          <span class="text-blue-400 font-mono w-6 select-none">[_]</span>
+          <span
+            class="marker-checkbox mt-0.5"
+            :class="{ checked: q.freeform_checked, 'has-marker': q.freeform_marker }"
+          >{{ q.freeform_checked && q.freeform_marker ? q.freeform_marker : '' }}</span>
+          <textarea
+            v-model="q.freeform"
+            class="flex-1 bg-gray-700 rounded px-2 py-1 text-gray-100"
+            placeholder="Additional thoughts..."
+            @focus="q.freeform_checked = true"
+            @keyup="applyMarkers(q, 'freeform_marker', 'freeform_checked', $event)"
+          ></textarea>
+        </div>
+      </div>
+
+      <details class="mt-8 mb-16">
+        <summary class="cursor-pointer text-gray-500 hover:text-gray-300">Raw JSON</summary>
+        <pre class="bg-gray-800 p-4 rounded mt-2 overflow-auto text-sm">{{ JSON.stringify(data, null, 2) }}</pre>
+      </details>
+    </div>
+
+    <button
+      v-if="checkedCount > 0"
+      @click="send"
+      class="fixed bottom-4 right-4 bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg text-lg font-semibold shadow-lg"
+    >
+      Send {{ checkedCount }} answer{{ checkedCount === 1 ? '' : 's' }}
+    </button>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted, computed } = Vue;
+
+    const pathMatch = window.location.pathname.match(/^\/v1\/conversation\/(.+)$/);
+    const urlParams = new URLSearchParams(window.location.search);
+    const conversationId = pathMatch?.[1] || urlParams.get('c') || 'default';
+    const API_BASE = `/api/conversation/${conversationId}`;
+
+    const MARKERS = {
+      '\\idea': '💡', '\\done': '✅', '\\later': '⏰', '\\no': '❌',
+      '\\yes': '✅', '\\maybe': '🤔', '\\important': '⚠️',
+      '\\question': '❓', '\\love': '❤️', '\\star': '⭐',
+    };
+
+    createApp({
+      setup() {
+        const data = ref({ questions: [] });
+
+        const checkedCount = computed(() => {
+          let count = 0;
+          for (const q of data.value.questions) {
+            for (const opt of q.options) if (opt.checked) count++;
+            if (q.freeform_checked) count++;
+          }
+          return count;
+        });
+
+        async function load() {
+          const res = await fetch(`${API_BASE}/data`);
+          data.value = await res.json();
+        }
+
+        function toggle(obj, keyOrEvent, maybeEvent) {
+          const event = maybeEvent || keyOrEvent;
+          const key = typeof keyOrEvent === 'string' ? keyOrEvent : 'checked';
+          if (event.target.tagName === 'TEXTAREA') return;
+          obj[key] = !obj[key];
+        }
+
+        function applyMarkers(obj, markerKey, checkedKey, event) {
+          const el = event.target;
+          let val = el.value;
+          for (const [shortcut, emoji] of Object.entries(MARKERS)) {
+            if (val.includes(shortcut)) {
+              obj[markerKey] = emoji;
+              obj[checkedKey] = true;
+              val = val.replace(shortcut, '');
+              el.value = val;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              return;
+            }
+          }
+        }
+
+        async function send() {
+          await fetch(`${API_BASE}/data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data.value)
+          });
+          console.log('Sent:', JSON.stringify(data.value, null, 2));
+        }
+
+        onMounted(load);
+
+        return { data, conversationId, checkedCount, toggle, send, applyMarkers };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
