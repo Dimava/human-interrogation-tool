@@ -27,10 +27,10 @@ No build step - Bun runs TypeScript directly.
 **Single-file server** (`server.ts`): Bun HTTP server handling all API routes and serving static HTML.
 
 **Data flow**:
-1. LLM POSTs questions as markdown to `/api/conversation/{id}/ask.md`
-2. Questions parsed and stored in `./data/{id}.json` (and `.md` mirror)
+1. LLM POSTs questions to `/api/conversation/{id}/ask.md`
+2. Questions stored in `./data/{id}.json` and `.md` mirror
 3. Human visits `http://localhost:4242/conversation/{id}` to answer
-4. LLM polls `/api/conversation/{id}/wait` (long-poll) or `/answers/new`
+4. LLM polls `/api/conversation/{id}/wait.md` (long-poll, 5 min default)
 
 **Question format** (markdown → JSON):
 ```
@@ -55,7 +55,6 @@ No build step - Bun runs TypeScript directly.
 
 All under `/api/conversation/{id}/`:
 - `POST ask.md` - Add questions (markdown body, `---` separates multiple)
-- `GET wait` or `wait.md` - Long-poll for new answers (timeout param in ms)
-- `GET answers/new` - Get unread answers, marks as seen
-- `GET answers` or `answers.md` - Get all answered questions
-- `GET/POST/DELETE data` - Full conversation data CRUD
+- `GET wait.md` - Long-poll for answers (returns md with YAML frontmatter)
+- `GET answers.md` - All answered questions as markdown
+- `DELETE data` - Clear conversation
