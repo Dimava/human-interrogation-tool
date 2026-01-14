@@ -78,17 +78,17 @@ function parseQuestion(chunk: string) {
       if (t.includes("(single)")) selectMode = "single";
       if (t.includes("(multi)")) selectMode = "multi";
     } else if (t.startsWith("> **")) {
-      const m = t.match(/^> \*\*([^*]+)\*\*:\s*(.+)/);
+      const m = t.match(/^> \*\*([^*]+)\*\*:\s*(.+)/) as [string, string, string] | null;
       if (m) { parent_id = m[1]; parent_summary = m[2]; }
     } else if (t.startsWith("**") && t.includes("**:")) {
-      const m = t.match(/^\*\*([^*]+)\*\*:\s*(.+)/);
+      const m = t.match(/^\*\*([^*]+)\*\*:\s*(.+)/) as [string, string, string] | null;
       if (m) { id = m[1]; text = m[2]; }
     } else if (t.match(/^\[[A-Z]\]/)) {
-      const m = t.match(/^\[([A-Z])\]\s*(.+)/);
+      const m = t.match(/^\[([A-Z])\]\s*(.+)/) as [string, string, string] | null;
       if (m) options.push({ id: m[1], text: m[2] });
     } else if (t.startsWith(">") && options.length > 0) {
       const desc = t.slice(1).trim();
-      if (desc) options[options.length - 1].description = desc;
+      if (desc) options[options.length - 1]!.description = desc;
     }
   }
   return text ? { id, parent_id, parent_summary, label, tags, selectMode, text, options } : null;
@@ -126,6 +126,19 @@ serve({
     "/v6/*": file("./v/index-v6.html"),
     "/skill.md": file("./skill.md"),
     "/api.js": file("./api.js"),
+
+    "/api/conversations": {
+      async GET() {
+        const { readdirSync, statSync } = await import("fs");
+        const files = readdirSync(DATA_DIR).filter(f => f.endsWith('.json'));
+        const convos = files.map(f => {
+          const id = f.replace('.json', '');
+          const stat = statSync(`${DATA_DIR}/${f}`);
+          return { id, modified: stat.mtimeMs };
+        }).sort((a, b) => b.modified - a.modified);
+        return Response.json(convos);
+      }
+    },
 
     "/api/conversation/:id/ask.md": {
       async POST(req) {

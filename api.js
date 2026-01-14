@@ -3,10 +3,16 @@
 // Extract conversation ID from URL path or query params
 const pathMatch = window.location.pathname.match(/^\/v\d*\/(.+)$/) || window.location.pathname.match(/^\/conversation\/(.+)$/);
 const urlParams = new URLSearchParams(window.location.search);
-export const conversationId = pathMatch?.[1] || urlParams.get('c') || 'default';
+export const conversationId = pathMatch?.[1] || urlParams.get('c') || null;
 
-// API base URL
-export const API_BASE = `/api/conversation/${conversationId}`;
+// API base URL (null if no conversation selected)
+export const API_BASE = conversationId ? `/api/conversation/${conversationId}` : null;
+
+// List all conversations
+export async function listConversations() {
+  const res = await fetch('/api/conversations');
+  return await res.json();
+}
 
 // Emoji markers
 export const MARKERS = {

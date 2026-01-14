@@ -195,6 +195,19 @@
 
     .empty { color: var(--dim); }
 
+    .conversation-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #222;
+    }
+    .conversation-item a {
+      color: var(--cyan);
+      text-decoration: none;
+    }
+    .conversation-item a:hover { text-decoration: underline; }
+    .conversation-date { color: var(--dim); font-size: 12px; }
+
     .json-toggle {
       color: #444;
       cursor: pointer;
@@ -218,13 +231,24 @@
       <div class="header-line">
         <span class="prompt">$</span>
         <span>interrogate</span>
-        <span class="path">{{ conversationId }}</span>
+        <span class="path">{{ conversationId || 'conversations' }}</span>
       </div>
     </div>
 
-    <div v-if="questions.length === 0" class="empty">-- no questions --</div>
+    <!-- Conversation list (when no conversation selected) -->
+    <template v-if="!conversationId">
+      <div v-if="conversations.length === 0" class="empty">-- no conversations --</div>
+      <div v-for="c in conversations" :key="c.id" class="conversation-item">
+        <a :href="'/v/' + c.id">{{ c.id }}</a>
+        <span class="conversation-date">{{ formatDate(c.modified) }}</span>
+      </div>
+    </template>
 
-    <div v-for="wrap in questions" :key="wrap.q.id" class="question" :class="{ sent: wrap.collapsed, clickable: wrap.hasAnswer && !wrap.modified }" @click="wrap.toggle()">
+    <!-- Questions view (when conversation selected) -->
+    <template v-else>
+      <div v-if="questions.length === 0" class="empty">-- no questions --</div>
+
+      <div v-for="wrap in questions" :key="wrap.q.id" class="question" :class="{ sent: wrap.collapsed, clickable: wrap.hasAnswer && !wrap.modified }" @click="wrap.toggle()">
       <div class="question-meta">
         <span>[{{ wrap.q.id }}]</span>
         <span v-if="wrap.q.label" class="question-label">{{ wrap.q.label }}</span>
@@ -254,12 +278,13 @@
       </div>
     </div>
 
-    <div class="json-toggle" @click="showJson = !showJson">
-      {{ showJson ? '[-]' : '[+]' }} json
-      <pre v-if="showJson" class="json-content">{{ JSON.stringify(data, null, 2) }}</pre>
-    </div>
+      <div class="json-toggle" @click="showJson = !showJson">
+        {{ showJson ? '[-]' : '[+]' }} json
+        <pre v-if="showJson" class="json-content">{{ JSON.stringify(data, null, 2) }}</pre>
+      </div>
+    </template>
 
-    <div class="status">
+    <div v-if="conversationId" class="status">
       <span class="status-hints">
         <kbd>click</kbd> toggle · <kbd>type</kbd> edit · <kbd>\yes</kbd> <kbd>\no</kbd> emoji
       </span>
@@ -273,13 +298,24 @@
   </div>
 
   <script type="module">
-    import { conversationId, loadData, saveData, applyMarker } from '/api.js';
+    import { conversationId, loadData, saveData, applyMarker, listConversations } from '/api.js';
     const { createApp, ref, onMounted, computed } = Vue;
 
     createApp({
       setup() {
         const data = ref({ questions: [] });
+        const conversations = ref([]);
         const showJson = ref(false);
+
+        function formatDate(ts) {
+          const d = new Date(ts);
+          const now = new Date();
+          const diff = now - d;
+          if (diff < 60000) return 'just now';
+          if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+          if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+          return d.toLocaleDateString();
+        }
 
         // Serialize question for comparison (exclude internal fields)
         function serializeQ(q) {
@@ -328,12 +364,20 @@
         });
 
         async function load() {
+          if (!conversationId) {
+            conversations.value = await listConversations();
+            return;
+          }
           data.value = await loadData();
           markAllSaved();
         }
 
         // Poll for new questions without disrupting local changes
         async function poll() {
+          if (!conversationId) {
+            conversations.value = await listConversations();
+            return;
+          }
           try {
             const serverData = await loadData();
             const existingIds = new Set(data.value.questions.map(q => q.id));
@@ -419,8 +463,8 @@
         onMounted(load);
 
         return {
-          data, conversationId, checkedCount, showJson, questions,
-          toggle, formatContent, parseContent, handleInput, send, load
+          data, conversationId, conversations, checkedCount, showJson, questions,
+          toggle, formatContent, parseContent, handleInput, send, load, formatDate
         };
       }
     }).mount('#app');
