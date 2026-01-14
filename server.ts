@@ -118,12 +118,14 @@ serve({
   routes: {
     "/": file("./index.html"),
     "/v/*": file("./index.html"),
-    "/v1/*": file("./index-v1.html"),
-    "/v2/*": file("./index-v2.html"),
-    "/v3/*": file("./index-v3.html"),
-    "/v4/*": file("./index-v4.html"),
-    "/v5/*": file("./index-v5.html"),
+    "/v1/*": file("./v/index-v1.html"),
+    "/v2/*": file("./v/index-v2.html"),
+    "/v3/*": file("./v/index-v3.html"),
+    "/v4/*": file("./v/index-v4.html"),
+    "/v5/*": file("./v/index-v5.html"),
+    "/v6/*": file("./v/index-v6.html"),
     "/skill.md": file("./skill.md"),
+    "/api.js": file("./api.js"),
 
     "/api/conversation/:id/ask.md": {
       async POST(req) {

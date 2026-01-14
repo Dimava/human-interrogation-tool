@@ -272,19 +272,9 @@
     </div>
   </div>
 
-  <script>
+  <script type="module">
+    import { conversationId, loadData, saveData, applyMarker } from '/api.js';
     const { createApp, ref, onMounted, computed } = Vue;
-
-    const pathMatch = window.location.pathname.match(/^\/conversation\/(.+)$/);
-    const urlParams = new URLSearchParams(window.location.search);
-    const conversationId = pathMatch?.[1] || urlParams.get('c') || 'default';
-    const API_BASE = `/api/conversation/${conversationId}`;
-
-    const MARKERS = {
-      '\\idea': '💡', '\\done': '✅', '\\later': '⏰', '\\no': '❌',
-      '\\yes': '✅', '\\maybe': '🤔', '\\important': '⚠️',
-      '\\question': '❓', '\\love': '❤️', '\\star': '⭐',
-    };
 
     createApp({
       setup() {
@@ -338,16 +328,14 @@
         });
 
         async function load() {
-          const res = await fetch(`${API_BASE}/data`);
-          data.value = await res.json();
+          data.value = await loadData();
           markAllSaved();
         }
 
         // Poll for new questions without disrupting local changes
         async function poll() {
           try {
-            const res = await fetch(`${API_BASE}/data`);
-            const serverData = await res.json();
+            const serverData = await loadData();
             const existingIds = new Set(data.value.questions.map(q => q.id));
             const newQuestions = serverData.questions.filter(q => !existingIds.has(q.id));
             if (newQuestions.length > 0) {
@@ -392,20 +380,19 @@
 
         function handleInput(q, opt, markerKey, checkedKey, event) {
           const text = event.target.textContent;
-          for (const [shortcut, emoji] of Object.entries(MARKERS)) {
-            if (text.includes(shortcut)) {
-              opt[markerKey] = emoji;
-              opt[checkedKey] = true;
-              event.target.textContent = text.replace(shortcut, '').trim();
-              // Move cursor to end
-              const range = document.createRange();
-              range.selectNodeContents(event.target);
-              range.collapse(false);
-              const sel = window.getSelection();
-              sel.removeAllRanges();
-              sel.addRange(range);
-              return;
-            }
+          const newText = applyMarker(text, emoji => {
+            opt[markerKey] = emoji;
+            opt[checkedKey] = true;
+          });
+          if (newText !== null) {
+            event.target.textContent = newText;
+            // Move cursor to end
+            const range = document.createRange();
+            range.selectNodeContents(event.target);
+            range.collapse(false);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
           }
         }
 
@@ -418,13 +405,8 @@
               return rest;
             })
           };
-          await fetch(`${API_BASE}/data`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(toSend)
-          });
+          await saveData(toSend);
           markAllSaved();
-          console.log('Sent:', JSON.stringify(toSend, null, 2));
         }
 
         // Ctrl+Enter to send
