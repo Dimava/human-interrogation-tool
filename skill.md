@@ -60,6 +60,29 @@ curl -X POST http://localhost:4242/api/conversation/my-session/ask \
     > Embedded, zero config, good for small projects'
 ```
 
+### Multiple Questions
+
+Separate questions with `---` to batch them in a single request:
+
+```
+**q1**: First question?
+[A] Option A
+[B] Option B
+---
+**q2**: Second question?
+[A] Yes
+[B] No
+---
+#priority
+[Urgency] (single)
+**q3**: How urgent is this?
+[A] High
+[B] Medium
+[C] Low
+```
+
+Response: `{"ok": true, "ids": ["q1", "q2", "q3"]}`
+
 ## Waiting for Answers
 
 **GET** `/api/conversation/{id}/answers/wait?timeout=30000`

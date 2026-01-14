@@ -71,6 +71,72 @@ function generateMarkdown(conversationId: string, data: any, answersOnly = false
   return `# ${conversationId}\n\n${parts.join('\n')}`;
 }
 
+function parseQuestion(chunk: string) {
+  const lines = chunk.split("\n");
+
+  let parent_id: string | null = null;
+  let parent_summary: string | null = null;
+  let id: string | null = null;
+  let text = "";
+  let label: string | null = null;
+  let tags: string[] = [];
+  let selectMode: "single" | "multi" | null = null;
+  const options: { id: string; text: string; description?: string }[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // #tag1 #tag2 - tags
+    if (trimmed.startsWith("#") && !trimmed.startsWith("##")) {
+      const tagMatches = trimmed.match(/#(\w+)/g);
+      if (tagMatches) {
+        tags = tagMatches.map(t => t.slice(1));
+      }
+    }
+    // [Label] (single|multi) - label and select mode (but not [A], [B], etc.)
+    else if (trimmed.match(/^\[[^\]]{2,}\]/) || trimmed.match(/^\[.+\].*\((single|multi)\)/)) {
+      const labelMatch = trimmed.match(/^\[([^\]]+)\]/);
+      if (labelMatch) label = labelMatch[1];
+      if (trimmed.includes("(single)")) selectMode = "single";
+      if (trimmed.includes("(multi)")) selectMode = "multi";
+    }
+    // > **q1**: summary - linked parent
+    else if (trimmed.startsWith("> **")) {
+      const match = trimmed.match(/^> \*\*([^*]+)\*\*:\s*(.+)/);
+      if (match) {
+        parent_id = match[1];
+        parent_summary = match[2];
+      }
+    }
+    // **q2**: question text
+    else if (trimmed.startsWith("**") && trimmed.includes("**:")) {
+      const match = trimmed.match(/^\*\*([^*]+)\*\*:\s*(.+)/);
+      if (match) {
+        id = match[1];
+        text = match[2];
+      }
+    }
+    // [A] option text
+    else if (trimmed.match(/^\[[A-Z]\]/)) {
+      const match = trimmed.match(/^\[([A-Z])\]\s*(.+)/);
+      if (match) {
+        options.push({ id: match[1], text: match[2] });
+      }
+    }
+    // > description (for previous option)
+    else if (trimmed.startsWith(">") && options.length > 0) {
+      const desc = trimmed.slice(1).trim();
+      if (desc) {
+        options[options.length - 1].description = desc;
+      }
+    }
+  }
+
+  if (!text) return null;
+
+  return { id, parent_id, parent_summary, label, tags, selectMode, text, options };
+}
+
 async function loadConversation(conversationId: string) {
   const path = getDataFile(conversationId);
   if (await file(path).exists()) {
@@ -174,107 +240,43 @@ serve({
       const conversationId = convMatch[1];
       const action = convMatch[2];
 
-      // POST /api/conversation/:id/ask - add question from markdown
-      // Format:
-      //   #tag1 #tag2
-      //   [Label] (single|multi)
-      //   > **parent_id**: parent summary
-      //   **q1**: Question text?
-      //   [A] Option A
-      //       > Description for A
-      //   [B] Option B
-      //       > Description for B
+      // POST /api/conversation/:id/ask - add question(s) from markdown
+      // Supports multiple questions separated by ---
       if (action === "ask" && req.method === "POST") {
         const md = await req.text();
-        const lines = md.trim().split("\n");
+        const chunks = md.split(/^---$/m).map(c => c.trim()).filter(c => c);
 
-        let parent_id: string | null = null;
-        let parent_summary: string | null = null;
-        let id: string | null = null;
-        let text = "";
-        let label: string | null = null;
-        let tags: string[] = [];
-        let selectMode: "single" | "multi" | null = null;
-        const options: { id: string; text: string; description?: string }[] = [];
+        const data = await loadConversation(conversationId);
+        const ids: string[] = [];
 
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i].trim();
+        for (const chunk of chunks) {
+          const parsed = parseQuestion(chunk);
+          if (!parsed) continue;
 
-          // #tag1 #tag2 - tags
-          if (line.startsWith("#") && !line.startsWith("##")) {
-            const tagMatches = line.match(/#(\w+)/g);
-            if (tagMatches) {
-              tags = tagMatches.map(t => t.slice(1));
-            }
+          if (!parsed.id) parsed.id = "q" + (data.questions.length + 1);
+
+          // Add [_] as last option if not already present
+          if (!parsed.options.some(o => o.id === '_')) {
+            parsed.options.push({ id: '_', text: '' });
           }
-          // [Label] (single|multi) - label and select mode (but not [A], [B], etc.)
-          else if (line.match(/^\[[^\]]{2,}\]/) || line.match(/^\[.+\].*\((single|multi)\)/)) {
-            const labelMatch = line.match(/^\[([^\]]+)\]/);
-            if (labelMatch) label = labelMatch[1];
-            if (line.includes("(single)")) selectMode = "single";
-            if (line.includes("(multi)")) selectMode = "multi";
-          }
-          // > **q1**: summary - linked parent
-          else if (line.startsWith("> **")) {
-            const match = line.match(/^> \*\*([^*]+)\*\*:\s*(.+)/);
-            if (match) {
-              parent_id = match[1];
-              parent_summary = match[2];
-            }
-          }
-          // **q2**: question text
-          else if (line.startsWith("**") && line.includes("**:")) {
-            const match = line.match(/^\*\*([^*]+)\*\*:\s*(.+)/);
-            if (match) {
-              id = match[1];
-              text = match[2];
-            }
-          }
-          // [A] option text
-          else if (line.match(/^\[[A-Z]\]/)) {
-            const match = line.match(/^\[([A-Z])\]\s*(.+)/);
-            if (match) {
-              options.push({ id: match[1], text: match[2] });
-            }
-          }
-          // > description (for previous option)
-          else if (line.startsWith(">") && options.length > 0) {
-            const desc = line.slice(1).trim();
-            if (desc) {
-              options[options.length - 1].description = desc;
-            }
-          }
+
+          data.questions.push({
+            ...parsed,
+            options: parsed.options.map(opt => ({ ...opt, checked: false, seen: false })),
+            created_at: Date.now(),
+          });
+          ids.push(parsed.id);
         }
 
-        if (!text) {
-          return new Response(JSON.stringify({ error: "Could not parse question" }), {
+        if (ids.length === 0) {
+          return new Response(JSON.stringify({ error: "Could not parse any questions" }), {
             status: 400,
             headers: { "Content-Type": "application/json" },
           });
         }
 
-        const data = await loadConversation(conversationId);
-        if (!id) id = "q" + (data.questions.length + 1);
-
-        // Add [_] as last option if not already present
-        if (!options.some(o => o.id === '_')) {
-          options.push({ id: '_', text: '' });
-        }
-
-        data.questions.push({
-          id,
-          parent_id,
-          parent_summary,
-          label,
-          tags,
-          selectMode,
-          text,
-          options: options.map(opt => ({ ...opt, checked: false, seen: false })),
-          created_at: Date.now(),
-        });
-
         await saveConversation(conversationId, data);
-        return new Response(JSON.stringify({ ok: true, id }), {
+        return new Response(JSON.stringify({ ok: true, ids }), {
           headers: { "Content-Type": "application/json" },
         });
       }
