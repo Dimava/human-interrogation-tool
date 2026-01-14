@@ -117,13 +117,13 @@ serve({
   idleTimeout: 0,
   routes: {
     "/": file("./index.html"),
-    "/conversation/*": file("./index.html"),
-    "/skill.md": file("./skill.md"),
+    "/v/*": file("./index.html"),
     "/v1/*": file("./index-v1.html"),
     "/v2/*": file("./index-v2.html"),
     "/v3/*": file("./index-v3.html"),
     "/v4/*": file("./index-v4.html"),
     "/v5/*": file("./index-v5.html"),
+    "/skill.md": file("./skill.md"),
 
     "/api/conversation/:id/ask.md": {
       async POST(req) {

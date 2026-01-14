@@ -29,7 +29,7 @@ No build step - Bun runs TypeScript directly.
 **Data flow**:
 1. LLM POSTs questions to `/api/conversation/{id}/ask.md`
 2. Questions stored in `./data/{id}.json` and `.md` mirror
-3. Human visits `http://localhost:4242/conversation/{id}` to answer
+3. Human visits `http://localhost:4242/v/{id}` to answer
 4. LLM polls `/api/conversation/{id}/wait.md` (long-poll, 5 min default)
 
 **Question format** (markdown → JSON):

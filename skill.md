@@ -141,7 +141,7 @@ If `pending` is not empty, wait again.
 
 ## Human Interface
 
-The human answers at: `http://localhost:4242/conversation/{conversation_id}`
+The human answers at: `http://localhost:4242/v/{conversation_id}`
 
 They can:
 - Click options to select/deselect
