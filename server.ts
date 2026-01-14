@@ -14,6 +14,23 @@ function getMdFile(conversationId: string) {
   return `${DATA_DIR}/${conversationId}.md`;
 }
 
+function getStatus(data: any) {
+  const pending: string[] = [];
+  const unread: string[] = [];
+
+  for (const q of data.questions) {
+    const checked = q.options.filter((o: any) => o.checked);
+    if (checked.length === 0) {
+      pending.push(q.id);
+    } else {
+      const hasUnread = checked.some((o: any) => !o.seen);
+      if (hasUnread) unread.push(q.id);
+    }
+  }
+
+  return { pending, unread };
+}
+
 function questionToMarkdown(q: any, answersOnly = false): string | null {
   const checked = q.options.filter((o: any) => o.checked);
 
@@ -60,15 +77,23 @@ function questionToMarkdown(q: any, answersOnly = false): string | null {
 }
 
 function generateMarkdown(conversationId: string, data: any, answersOnly = false): string {
+  const status = getStatus(data);
   const parts = data.questions
     .map((q: any) => questionToMarkdown(q, answersOnly))
     .filter((md: string | null) => md !== null);
 
+  // YAML frontmatter
+  let frontmatter = '---\n';
+  frontmatter += `conversation: ${conversationId}\n`;
+  frontmatter += `pending: [${status.pending.join(', ')}]\n`;
+  frontmatter += `unread: [${status.unread.join(', ')}]\n`;
+  frontmatter += '---\n\n';
+
   if (parts.length === 0) {
-    return answersOnly ? 'No answers yet.\n' : `# ${conversationId}\n`;
+    return frontmatter + (answersOnly ? 'No answers yet.\n' : `# ${conversationId}\n`);
   }
 
-  return `# ${conversationId}\n\n${parts.join('\n')}`;
+  return frontmatter + `# ${conversationId}\n\n${parts.join('\n')}`;
 }
 
 function parseQuestion(chunk: string) {
@@ -240,9 +265,9 @@ serve({
       const conversationId = convMatch[1];
       const action = convMatch[2];
 
-      // POST /api/conversation/:id/ask - add question(s) from markdown
+      // POST /api/conversation/:id/ask.md - add question(s) from markdown
       // Supports multiple questions separated by ---
-      if (action === "ask" && req.method === "POST") {
+      if ((action === "ask" || action === "ask.md") && req.method === "POST") {
         const md = await req.text();
         const chunks = md.split(/^---$/m).map(c => c.trim()).filter(c => c);
 
@@ -276,7 +301,8 @@ serve({
         }
 
         await saveConversation(conversationId, data);
-        return new Response(JSON.stringify({ ok: true, ids }), {
+        const status = getStatus(data);
+        return new Response(JSON.stringify({ ok: true, ids, status }), {
           headers: { "Content-Type": "application/json" },
         });
       }
@@ -306,7 +332,8 @@ serve({
           }
         }
 
-        return new Response(JSON.stringify({ answers }), {
+        const status = getStatus(data);
+        return new Response(JSON.stringify({ answers, status }), {
           headers: { "Content-Type": "application/json" },
         });
       }
@@ -316,15 +343,17 @@ serve({
         const data = await loadConversation(conversationId);
         const newAnswers = collectNewAnswers(data, true);
         await saveConversation(conversationId, data);
+        const status = getStatus(data);
 
-        return new Response(JSON.stringify({ answers: newAnswers }), {
+        return new Response(JSON.stringify({ answers: newAnswers, status }), {
           headers: { "Content-Type": "application/json" },
         });
       }
 
-      // GET /api/conversation/:id/answers/wait - long-poll until new answers
-      if (action === "answers/wait" && req.method === "GET") {
-        const timeout = parseInt(url.searchParams.get("timeout") || "30000");
+      // GET /api/conversation/:id/wait or wait.md - long-poll until new answers
+      if ((action === "wait" || action === "wait.md") && req.method === "GET") {
+        const timeout = parseInt(url.searchParams.get("timeout") || "300000"); // 5 min default
+        const wantsMd = action === "wait.md";
         const start = Date.now();
 
         while (Date.now() - start < timeout) {
@@ -335,7 +364,14 @@ serve({
             // Now mark as seen
             collectNewAnswers(data, true);
             await saveConversation(conversationId, data);
-            return new Response(JSON.stringify({ answers: newAnswers }), {
+            const status = getStatus(data);
+
+            if (wantsMd) {
+              return new Response(generateMarkdown(conversationId, data, true), {
+                headers: { "Content-Type": "text/markdown; charset=utf-8" },
+              });
+            }
+            return new Response(JSON.stringify({ answers: newAnswers, status }), {
               headers: { "Content-Type": "application/json" },
             });
           }
@@ -343,10 +379,24 @@ serve({
           await Bun.sleep(500); // poll interval
         }
 
-        // Timeout - return empty
-        return new Response(JSON.stringify({ answers: [], timeout: true }), {
+        // Timeout - return current status
+        const data = await loadConversation(conversationId);
+        const status = getStatus(data);
+
+        if (wantsMd) {
+          return new Response(generateMarkdown(conversationId, data, true), {
+            headers: { "Content-Type": "text/markdown; charset=utf-8" },
+          });
+        }
+        return new Response(JSON.stringify({ answers: [], status, timeout: true }), {
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      // Legacy: /answers/wait redirects to /wait
+      if (action === "answers/wait" && req.method === "GET") {
+        const timeout = url.searchParams.get("timeout") || "300000";
+        return Response.redirect(`/api/conversation/${conversationId}/wait?timeout=${timeout}`, 302);
       }
 
       // GET /api/conversation/:id/data - full data
