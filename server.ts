@@ -10,6 +10,67 @@ function getDataFile(conversationId: string) {
   return `${DATA_DIR}/${conversationId}.json`;
 }
 
+function getMdFile(conversationId: string) {
+  return `${DATA_DIR}/${conversationId}.md`;
+}
+
+function questionToMarkdown(q: any, answersOnly = false): string | null {
+  const checked = q.options.filter((o: any) => o.checked);
+
+  // In answersOnly mode, skip questions with no answers
+  if (answersOnly && checked.length === 0) return null;
+
+  let md = '';
+
+  // Question header with metadata
+  const tags = q.tags?.length ? q.tags.map((t: string) => `#${t}`).join(' ') + ' ' : '';
+  const label = q.label ? `[${q.label}] ` : '';
+  const mode = q.selectMode ? `(${q.selectMode}) ` : '';
+
+  if (tags || label || mode) {
+    md += `${tags}${label}${mode}\n`;
+  }
+
+  // Parent reference
+  if (q.parent_id) {
+    md += `> **${q.parent_id}**: ${q.parent_summary || ''}\n`;
+  }
+
+  // Question text
+  md += `**${q.id}**: ${q.text}\n`;
+
+  // Options - in answersOnly mode, only show checked options without checkboxes
+  const opts = answersOnly ? checked : q.options;
+  for (const opt of opts) {
+    if (opt.id === '_' && !opt.text && !opt.description) continue;
+    const marker = opt.marker ? ` ${opt.marker}` : '';
+    if (answersOnly) {
+      md += `- [${opt.id}]${marker} ${opt.text}\n`;
+    } else {
+      const check = opt.checked ? 'x' : ' ';
+      md += `- [${check}] [${opt.id}]${marker} ${opt.text}\n`;
+    }
+    if (opt.description) {
+      const desc = opt.description.split('\n').map((l: string) => `  > ${l}`).join('\n');
+      md += `${desc}\n`;
+    }
+  }
+
+  return md;
+}
+
+function generateMarkdown(conversationId: string, data: any, answersOnly = false): string {
+  const parts = data.questions
+    .map((q: any) => questionToMarkdown(q, answersOnly))
+    .filter((md: string | null) => md !== null);
+
+  if (parts.length === 0) {
+    return answersOnly ? 'No answers yet.\n' : `# ${conversationId}\n`;
+  }
+
+  return `# ${conversationId}\n\n${parts.join('\n')}`;
+}
+
 async function loadConversation(conversationId: string) {
   const path = getDataFile(conversationId);
   if (await file(path).exists()) {
@@ -20,6 +81,7 @@ async function loadConversation(conversationId: string) {
 
 async function saveConversation(conversationId: string, data: any) {
   await Bun.write(getDataFile(conversationId), JSON.stringify(data, null, 2));
+  await Bun.write(getMdFile(conversationId), generateMarkdown(conversationId, data));
 }
 
 // Collect new (unseen) answers, optionally marking them as seen
@@ -220,30 +282,7 @@ serve({
       // GET /api/conversation/:id/answers.md - get answers as markdown
       if (action === "answers.md" && req.method === "GET") {
         const data = await loadConversation(conversationId);
-        let md = `# ${conversationId}\n\n`;
-
-        for (const q of data.questions) {
-          const checked = q.options.filter((o: any) => o.checked);
-          if (checked.length === 0) continue;
-
-          const label = q.label ? `${q.id} ${q.label}` : q.id;
-          md += `**${label}**: ${q.text}\n`;
-
-          for (const opt of checked) {
-            const marker = opt.marker ? ` ${opt.marker}` : "";
-            // Skip empty [_] options
-            if (opt.id === "_" && !opt.text && !opt.description) continue;
-
-            md += `- [${opt.id}]${marker} ${opt.text}\n`;
-            if (opt.description) {
-              const desc = opt.description.split('\n').map((l: string) => `  > ${l}`).join('\n');
-              md += `${desc}\n`;
-            }
-          }
-          md += "\n";
-        }
-
-        return new Response(md.trim() || "No answers yet.\n", {
+        return new Response(generateMarkdown(conversationId, data, true), {
           headers: { "Content-Type": "text/markdown; charset=utf-8" },
         });
       }
