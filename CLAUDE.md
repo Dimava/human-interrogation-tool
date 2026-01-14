@@ -57,4 +57,3 @@ All under `/api/conversation/{id}/`:
 - `POST ask.md` - Add questions (markdown body, `---` separates multiple)
 - `GET wait.md` - Long-poll for answers (returns md with YAML frontmatter)
 - `GET answers.md` - All answered questions as markdown
-- `DELETE data` - Clear conversation

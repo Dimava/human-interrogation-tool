@@ -124,7 +124,6 @@ If `pending` is not empty, wait again.
 | `/ask.md` | POST | Add questions |
 | `/wait.md` | GET | Long-poll for answers |
 | `/answers.md` | GET | All answers (no wait) |
-| `/data` | DELETE | Clear conversation |
 
 ## Workflow
 
