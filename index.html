@@ -20,16 +20,17 @@
       --yellow: #ffcc00;
     }
 
-    html, body { height: 100%; }
+    html { height: 100%; }
 
     body {
+      min-height: 100%;
       font-family: 'JetBrains Mono', monospace;
       font-size: 14px;
       line-height: 1.5;
       background: var(--bg);
       color: var(--fg);
       padding: 0.75rem;
-      padding-bottom: 3rem;
+      padding-bottom: 100vh;
     }
 
     .header {
@@ -48,10 +49,6 @@
     .question + .question {
       border-top: 1px solid #333;
       padding-top: 0.75rem;
-    }
-
-    .question:last-child {
-      margin-bottom: 100vh;
     }
 
     .question-meta {

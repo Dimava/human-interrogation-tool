@@ -51,7 +51,8 @@ function collectNewAnswers(data: any, markSeen: boolean) {
 }
 
 serve({
-  port: 3000,
+  port: 4242,
+  idleTimeout: 0, // disable timeout for long-polling
   async fetch(req) {
     const url = new URL(req.url);
 
@@ -95,6 +96,13 @@ serve({
     if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname.startsWith("/conversation/")) {
       return new Response(file("./index.html"), {
         headers: { "Content-Type": "text/html" },
+      });
+    }
+
+    // Serve skill.md
+    if (url.pathname === "/skill.md") {
+      return new Response(file("./skill.md"), {
+        headers: { "Content-Type": "text/markdown; charset=utf-8" },
       });
     }
 
@@ -347,4 +355,4 @@ serve({
   },
 });
 
-console.log("Server running at http://localhost:3000");
+console.log("Server running at http://localhost:4242");
