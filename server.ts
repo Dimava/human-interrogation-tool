@@ -15,6 +15,11 @@ const MARKERS: Record<string, string> = {
   '\\target': '🎯',
 };
 
+// Decode HTML entities (for curl-friendly input)
+function decodeEntities(text: string): string {
+  return text.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)));
+}
+
 // --- Data helpers ---
 
 const getDataFile = (id: string) => `${DATA_DIR}/${id}.json`;
@@ -200,7 +205,7 @@ serve({
     "/api/conversation/:id/ask.md": {
       async POST(req) {
         const id = req.params.id;
-        const md = await req.text();
+        const md = decodeEntities(await req.text());
         const chunks = md.split(/^---$/m).map(c => c.trim()).filter(Boolean);
         const data = await load(id);
         const ids: string[] = [];
