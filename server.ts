@@ -4,6 +4,17 @@ import { mkdirSync } from "fs";
 const DATA_DIR = "./data";
 try { mkdirSync(DATA_DIR); } catch {}
 
+// Emoji markers: \1-\5 rating, \x reset, \target tag
+const MARKERS: Record<string, string> = {
+  '\\1': '1️⃣',
+  '\\2': '2️⃣',
+  '\\3': '3️⃣',
+  '\\4': '4️⃣',
+  '\\5': '5️⃣',
+  '\\x': '',
+  '\\target': '🎯',
+};
+
 // --- Data helpers ---
 
 const getDataFile = (id: string) => `${DATA_DIR}/${id}.json`;
@@ -42,6 +53,7 @@ function questionToMarkdown(q: any, answersOnly = false): string | null {
   if (tags || label || mode) md += `${tags}${label}${mode}\n`;
   if (q.parent_id) md += `> **${q.parent_id}**: ${q.parent_summary || ''}\n`;
   md += `**${q.id}**: ${q.text}\n`;
+  if (q.body) md += q.body + '\n';
 
   const opts = answersOnly ? checked : q.options;
   for (const opt of opts) {
@@ -54,9 +66,14 @@ function questionToMarkdown(q: any, answersOnly = false): string | null {
   return md;
 }
 
-function generateMarkdown(id: string, data: any, answersOnly = false): string {
+function generateMarkdown(id: string, data: any, answersOnly = false, newOnly = false): string {
   const status = getStatus(data);
-  const parts = data.questions.map((q: any) => questionToMarkdown(q, answersOnly)).filter(Boolean);
+  let questions = data.questions;
+  if (newOnly) {
+    // Only include questions with unseen checked options
+    questions = questions.filter((q: any) => q.options.some((o: any) => o.checked && !o.seen));
+  }
+  const parts = questions.map((q: any) => questionToMarkdown(q, answersOnly)).filter(Boolean);
   const frontmatter = `---\nconversation: ${id}\npending: [${status.pending.join(', ')}]\nunread: [${status.unread.join(', ')}]\n---\n\n`;
   return frontmatter + (parts.length ? `# ${id}\n\n${parts.join('\n')}` : (answersOnly ? 'No answers yet.\n' : `# ${id}\n`));
 }
@@ -67,6 +84,8 @@ function parseQuestion(chunk: string) {
   let parent_id: string | null = null, parent_summary: string | null = null;
   let id: string | null = null, text = "", label: string | null = null;
   let tags: string[] = [], selectMode: "single" | "multi" | null = null;
+  let body: string[] = [];
+  let inBody = false;
   const options: { id: string; text: string; description?: string }[] = [];
 
   for (const line of chunk.split("\n")) {
@@ -82,16 +101,21 @@ function parseQuestion(chunk: string) {
       if (m) { parent_id = m[1]; parent_summary = m[2]; }
     } else if (t.startsWith("**") && t.includes("**:")) {
       const m = t.match(/^\*\*([^*]+)\*\*:\s*(.+)/) as [string, string, string] | null;
-      if (m) { id = m[1]; text = m[2]; }
-    } else if (t.match(/^\[[A-Z]\]/)) {
-      const m = t.match(/^\[([A-Z])\]\s*(.+)/) as [string, string, string] | null;
+      if (m) { id = m[1]; text = m[2]; inBody = true; }
+    } else if (t.match(/^\[[A-Z_]\]/)) {
+      inBody = false;
+      const m = t.match(/^\[([A-Z_])\]\s*(.*)/) as [string, string, string] | null;
       if (m) options.push({ id: m[1], text: m[2] });
     } else if (t.startsWith(">") && options.length > 0) {
       const desc = t.slice(1).trim();
       if (desc) options[options.length - 1]!.description = desc;
+    } else if (inBody && t) {
+      // Capture body lines between question and first option
+      body.push(line);
     }
   }
-  return text ? { id, parent_id, parent_summary, label, tags, selectMode, text, options } : null;
+  const bodyText = body.join("\n").trim() || null;
+  return text ? { id, parent_id, parent_summary, label, tags, selectMode, text, body: bodyText, options } : null;
 }
 
 function collectNewAnswers(data: any, markSeen: boolean) {
@@ -126,6 +150,39 @@ serve({
     "/v6/*": file("./v/index-v6.html"),
     "/skill.md": file("./skill.md"),
     "/api.js": file("./api.js"),
+
+    "/api/markers": {
+      GET: () => Response.json(MARKERS),
+    },
+
+    "/api/conversation/:id/note": {
+      async POST(req) {
+        const id = req.params.id;
+        let text = await req.text();
+        let category = 'note';
+
+        // Check for \category prefix (e.g., "\think something") - categorized notes also persist to ./notes/{category}.md
+        const slashMatch = text.match(/^\\(\w+)\s+(.+)/s) as [string, string, string] | null;
+        if (slashMatch) {
+          category = slashMatch[1].toLowerCase();
+          text = slashMatch[2];
+
+          // Persist to ./notes/{category}.md
+          try { mkdirSync('./notes'); } catch {}
+          const notesFile = `./notes/${category}.md`;
+          const existing = await file(notesFile).exists() ? await file(notesFile).text() : `# ${category}\n\n`;
+          const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+          await Bun.write(notesFile, existing + `- [${timestamp}] [${id}] ${text}\n`);
+        }
+
+        const data = await load(id);
+        if (!data.notes) data.notes = [];
+        data.notes.push({ text, category, time: Date.now(), seen: false });
+        await save(id, data);
+
+        return Response.json({ ok: true, category });
+      }
+    },
 
     "/api/conversations": {
       async GET() {
@@ -171,10 +228,24 @@ serve({
 
         while (Date.now() - start < timeout) {
           const data = await load(id);
-          if (collectNewAnswers(data, false).length > 0) {
+          const hasNewAnswers = collectNewAnswers(data, false).length > 0;
+          const unseenNotes = (data.notes || []).filter((n: any) => !n.seen);
+
+          if (hasNewAnswers || unseenNotes.length > 0) {
+            // Generate markdown BEFORE marking seen (so newOnly works)
+            let md = generateMarkdown(id, data, true, true);
+            if (unseenNotes.length > 0) {
+              md += '\n## Notes\n\n' + unseenNotes.map((n: any) =>
+                `> [${n.category || 'note'}] ${n.text}`
+              ).join('\n\n') + '\n';
+            }
+
+            // Now mark as seen and save
             collectNewAnswers(data, true);
+            unseenNotes.forEach((n: any) => n.seen = true);
             await save(id, data);
-            return new Response(generateMarkdown(id, data, true));
+
+            return new Response(md);
           }
           await Bun.sleep(500);
         }

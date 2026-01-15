@@ -14,12 +14,13 @@ export async function listConversations() {
   return await res.json();
 }
 
-// Emoji markers
-export const MARKERS = {
-  '\\idea': '💡', '\\done': '✅', '\\later': '⏰', '\\no': '❌',
-  '\\yes': '✅', '\\maybe': '🤔', '\\important': '⚠️',
-  '\\question': '❓', '\\love': '❤️', '\\star': '⭐',
-};
+// Emoji markers - loaded from server
+export let MARKERS = {};
+export async function loadMarkers() {
+  const res = await fetch('/api/markers');
+  MARKERS = await res.json();
+  return MARKERS;
+}
 
 // Load conversation data
 export async function loadData() {

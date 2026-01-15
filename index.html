@@ -63,6 +63,23 @@
     .question.clickable { cursor: pointer; }
     .question-text { margin-bottom: 0.5rem; }
 
+    .question-body {
+      margin: 0.75rem 0;
+      padding: 0.75rem 1rem;
+      background: #1a1a1a;
+      border-left: 2px solid var(--dim);
+      font-size: 0.9em;
+      line-height: 1.5;
+    }
+    .question-body h2 { color: var(--cyan); margin: 0.75rem 0 0.5rem; font-size: 1.1em; }
+    .question-body h3 { color: var(--fg); margin: 0.5rem 0 0.25rem; font-size: 1em; }
+    .question-body code { background: #333; padding: 0.1em 0.3em; border-radius: 3px; }
+    .question-body pre { background: #111; padding: 0.75rem; margin: 0.5rem 0; overflow-x: auto; }
+    .question-body pre code { background: none; padding: 0; }
+    .question-body ul { margin: 0.5rem 0; padding-left: 1.5rem; }
+    .question-body li { margin: 0.25rem 0; }
+    .question-body p { margin: 0.5rem 0; }
+
     /* Options */
     .options { margin-left: 1ch; }
 
@@ -147,11 +164,24 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 0.75rem;
       font-size: 13px;
     }
 
-    .status-hints { color: var(--dim); }
+    .status-hints { color: var(--dim); flex-shrink: 0; }
     .status-hints kbd { color: var(--cyan); }
+
+    .note-input {
+      flex: 1;
+      min-width: 150px;
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: var(--fg);
+      padding: 0.25rem 0.5rem;
+      font-size: 13px;
+    }
+    .note-input::placeholder { color: var(--dim); }
 
     .send-btn {
       background: transparent;
@@ -256,6 +286,7 @@
         <span v-if="wrap.q.selectMode" class="question-mode">({{ wrap.q.selectMode }})</span>
       </div>
       <div class="question-text">{{ wrap.q.text }}</div>
+      <div v-if="wrap.q.body" class="question-body" v-html="renderBody(wrap.q.body)"></div>
 
       <div class="options" @click.stop>
         <div
@@ -286,8 +317,14 @@
 
     <div v-if="conversationId" class="status">
       <span class="status-hints">
-        <kbd>click</kbd> toggle · <kbd>type</kbd> edit · <kbd>\yes</kbd> <kbd>\no</kbd> emoji
+        <kbd>click</kbd> toggle · <kbd>type</kbd> edit · <kbd>\1</kbd>-<kbd>\5</kbd> rate · <kbd>\x</kbd> reset
       </span>
+      <input
+        v-model="noteText"
+        @keyup.enter="sendNote"
+        placeholder="note / insight:..."
+        class="note-input"
+      />
       <span class="status-buttons">
         <button class="clear-btn" @click="load">clear</button>
         <button class="send-btn" :disabled="checkedCount === 0" @click="send">
@@ -298,7 +335,7 @@
   </div>
 
   <script type="module">
-    import { conversationId, loadData, saveData, applyMarker, listConversations } from '/api.js';
+    import { conversationId, loadData, saveData, applyMarker, listConversations, loadMarkers } from '/api.js';
     const { createApp, ref, onMounted, computed } = Vue;
 
     createApp({
@@ -306,6 +343,7 @@
         const data = ref({ questions: [] });
         const conversations = ref([]);
         const showJson = ref(false);
+        const noteText = ref('');
 
         function formatDate(ts) {
           const d = new Date(ts);
@@ -407,6 +445,24 @@
           return text || '';
         }
 
+        function renderBody(body) {
+          // Simple markdown-ish rendering
+          return body
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+            .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+            .replace(/^- (.+)$/gm, '<li>$1</li>')
+            .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+            .replace(/\n\n/g, '</p><p>')
+            .replace(/^(?!<[huplo])(.+)$/gm, '<p>$1</p>')
+            .replace(/<p><\/p>/g, '');
+        }
+
         function parseContent(q, opt, event) {
           const raw = event.target.textContent;
           const lines = raw.split('\n');
@@ -441,6 +497,10 @@
         }
 
         async function send() {
+          // Send note if present
+          if (noteText.value.trim()) {
+            await sendNote();
+          }
           // Strip internal fields before sending
           const toSend = {
             ...data.value,
@@ -453,6 +513,15 @@
           markAllSaved();
         }
 
+        async function sendNote() {
+          if (!noteText.value.trim()) return;
+          await fetch(`/api/conversation/${conversationId}/note`, {
+            method: 'POST',
+            body: noteText.value.trim()
+          });
+          noteText.value = '';
+        }
+
         // Ctrl+Enter to send
         document.addEventListener('keydown', (e) => {
           if (e.ctrlKey && e.key === 'Enter' && checkedCount.value > 0) {
@@ -460,11 +529,15 @@
           }
         });
 
-        onMounted(load);
+        onMounted(async () => {
+          await loadMarkers();
+          load();
+        });
 
         return {
           data, conversationId, conversations, checkedCount, showJson, questions,
-          toggle, formatContent, parseContent, handleInput, send, load, formatDate
+          toggle, formatContent, renderBody, parseContent, handleInput, send, load, formatDate,
+          noteText, sendNote
         };
       }
     }).mount('#app');
