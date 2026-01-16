@@ -60,6 +60,7 @@
     .question-meta span + span::before { content: ' '; }
     .question-label { color: var(--cyan); }
     .question-mode { color: var(--yellow); }
+    .question-parent { color: var(--comment); font-size: 0.9em; margin-bottom: 0.25rem; }
     .question.clickable { cursor: pointer; }
     .question-text { margin-bottom: 0.5rem; }
 
@@ -102,6 +103,7 @@
     }
 
     .question.sent .question-meta,
+    .question.sent .question-parent,
     .question.sent .question-text,
     .question.sent .option-indicator,
     .question.sent .option-letter,
@@ -285,6 +287,7 @@
         <span v-for="tag in (wrap.q.tags || [])" :key="tag">#{{ tag }}</span>
         <span v-if="wrap.q.selectMode" class="question-mode">({{ wrap.q.selectMode }})</span>
       </div>
+      <div v-if="wrap.q.parent_id" class="question-parent">↳ {{ wrap.q.parent_id }}: {{ wrap.q.parent_summary }}</div>
       <div class="question-text">{{ wrap.q.text }}</div>
       <div v-if="wrap.q.body" class="question-body" v-html="renderBody(wrap.q.body)"></div>
 
