@@ -96,9 +96,13 @@ unread: []
 - Emoji shortcuts: `\yes`, `\no`, `\1`-`\5` for ratings
 - Ctrl+Enter to send
 
-## Claude Code Skill
+## Usage with LLM Agents
 
-This tool ships as a [Claude Code skill](https://docs.anthropic.com/en/docs/claude-code/skills). Copy `skill.md` to your skills directory to enable the `/interrogate` command.
+Tell your agent to fetch the skill documentation:
+
+> Fetch http://localhost:4242/skill.md and use it to ask me questions
+
+Or for Claude Code, copy `skill.md` to your [skills directory](https://docs.anthropic.com/en/docs/claude-code/skills) to enable the `/interrogate` command.
 
 ## License
 
