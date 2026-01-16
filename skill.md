@@ -1,3 +1,8 @@
+---
+name: human-interrogation
+description: Ask questions to a human via HTTP API and wait for responses. Use when you need human input, clarification, approval, or to present options and gather feedback in async workflows. Activate when user says "interrogate", "interrogation".
+---
+
 # Human Interrogation Tool - LLM Skill
 
 Use this tool to ask questions to a human and wait for their responses. This enables async human-in-the-loop workflows.
@@ -25,6 +30,8 @@ Send markdown-formatted questions (3-10 per batch recommended):
 #tag1 #tag2
 [Label] (single|multi)
 **q1**: Your question here?
+Additional context goes here - any lines between the
+question and first option provide background info.
 [A] First option
     > Optional description explaining this choice
 [B] Second option
@@ -39,10 +46,12 @@ Send markdown-formatted questions (3-10 per batch recommended):
 | Tags | `#tag` | No |
 | Label | `[Label]` | No |
 | Mode | `(single)` or `(multi)` | No (defaults to multi) |
+| Parent ref | `> **q1**: summary` | No |
 | Question ID | `**q1**:` | No (auto-generated if omitted) |
 | Question text | After `**id**:` | Yes |
+| Context | Lines after question, before options | No |
 | Option | `[A] text` | Yes (at least one) |
-| Description | `> text` on next line | No |
+| Option desc | `> text` (indented under option) | No |
 
 ### Example Request
 
@@ -52,12 +61,25 @@ curl -X POST http://localhost:4242/api/conversation/my-session/ask.md \
   -d '#design #api
 [Architecture] (single)
 **q1**: Which database should we use for this project?
+We expect ~10M users and need strong consistency for auth data.
 [A] PostgreSQL
     > Relational, ACID compliant, good for complex queries
 [B] MongoDB
     > Document store, flexible schema, good for rapid iteration
 [C] SQLite
     > Embedded, zero config, good for small projects'
+```
+
+### Threaded Follow-ups
+
+Reference a previous answer with `> **id**: summary`:
+
+```
+> **q1**: Chose PostgreSQL as primary database
+**q2**: Which PostgreSQL hosting approach?
+[A] Self-hosted
+[B] AWS RDS
+[C] Supabase
 ```
 
 ### Multiple Questions
@@ -129,8 +151,10 @@ If `pending` is not empty, wait again.
 
 1. **Ask**: POST 3-10 questions to `/ask.md`
 2. **Wait**: GET `/wait.md` (5 min default)
-3. **Check**: If `pending` not empty, wait again
+3. **Process**: Work with whatever answers you receive
 4. **Repeat**: Ask follow-ups based on answers
+
+**Important**: Do NOT wait for all questions to be answered. When a human submits a response, unanswered questions were intentionally skipped or deferred - process what you get and move on. Pending questions remain available and may be answered later.
 
 ## Tips
 
@@ -138,6 +162,8 @@ If `pending` is not empty, wait again.
 - Use `[Labels]` so humans understand context
 - Use `(single)` when only one answer makes sense
 - Provide `> descriptions` for complex options
+- Add context lines for questions needing background info
+- Use `> **id**: summary` to thread follow-up questions
 
 ## Human Interface
 
